@@ -1,0 +1,298 @@
+const{test, describe, beforeAll, beforeEach, afterAll, afterEach, expect} = require('@playwright/test');
+const {chromium} = require('playwright');
+
+const host = 'http://localhost:3000';
+
+let browser;
+let context;
+let page;
+
+let user = {
+    email: "",
+    password: "123456",
+    confirmPassword: "123456"
+}
+
+let game = {
+    title: "",
+    category: "",
+    maxLevel: "99",
+    imageUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/Grand_Theft_Auto_logo_series.svg/2550px-Grand_Theft_Auto_logo_series.svg.png",
+    summary: "This is the latest GTA version",
+    id: ""
+}
+
+describe("e2e tests", () => {
+    beforeAll(async () => {
+        browser = await chromium.launch();
+    });
+
+    afterAll(async () => {
+        await browser.close();
+    });
+
+    beforeEach(async () => {
+        context = await browser.newContext();
+        page = await browser.newPage();
+    });
+
+    afterEach(async () => {
+        await page.close();
+        await context.close();
+    });
+
+    describe("Authentication Tests", () => {
+        test("Register with valid data", async() => {
+            //Arrange
+            await page.goto(host);
+            await page.click("//a[text()='Register']");
+            await page.waitForSelector("form");
+        
+            let random = Math.floor(Math.random() * 1000);
+            user.email = 'abv_${random}@abv.bg';
+
+            //Act
+            await page.fill("//input[@id='email']", user.email);
+            await page.fill("//input[@id='register-password']", user.password);
+            await page.fill("//input[@id='confirm-password']", user.confirmPassword);
+
+            await page.click("//input[@type='submit']");
+
+            //Assert
+            await expect(page.locator("//a[text()='Logout']")).toBeVisible();
+            expect(page.url()).toBe(host + '/')
+        })
+
+        test("Register does not work with empty fields", async() => {
+            //Assert
+            await page.goto(host);
+            await page.click("//a[@href='/register']");
+            await page.waitForSelector("form");
+
+            //Act
+            page.on('dialog', async dialog => {
+                expect(dialog.message()).toBe("No empty fields are allowed and confirm password has to match password!");
+
+                await dialog.accept();
+            });
+
+            await page.click("//input[@type='submit']");
+
+            //Assert
+            expect(page.url()).toBe(host = "/register");
+        })
+
+        test("Login with valid credentials", async () => {
+            //Arrange
+            await page.goto(host);
+            await page.click("//a[text()='Login']");
+            await page.waitForSelector("form");
+
+            //Act
+            await page.fill("//input[@type='email']", user.email);
+            await page.fill("//input[@type='password']", user.password);
+            await page.fill("//input[@type='submit']");
+
+            //Assert
+            await expect(page.locator("//a[text()='Logout']")).toBeVisible();
+            expect(page.url()).toBe(host + "/");
+        })
+
+        test("Login with empty fields", async () => {
+            //Arrange
+            await page.goto(host);
+            await page.click("//a[text()='Login']");
+            await page.waitForSelector("form");
+
+            //Act
+            const dialogPromise = page.waitForSelector('dialog');
+
+            await page.click("//input[@type='submit']");
+
+            const dialog = await dialogPromise;
+
+            //Assert
+            expect(dialog.message()).toBe("unable to log in!");
+            await dialog.accept();
+
+            expect(page.url()).toBe(host + "/login");
+        })
+
+        test("Logout from the application", async() => {
+            //Arrange
+            await page.goto(host);
+            await page.click("//a[text()='Login']");
+            await page.waitForSelector("form");
+
+            await page.fill("//input[@type='email']", user.email);
+            await page.fill("//input[@type='password']", user.password);
+            await page.fill("//input[@type='submit']");
+
+            //Act
+            await page.click("//a[text()='Logout']");
+
+            //Assert
+            await expect(page.locator("//a[text()='Login']")).toBeVisible();
+            expect(page.url()).toBe(host + '/');
+        })
+    });
+
+    describe("Navbar tests", () => {
+        test("Logged in users shold see correct buttons", async() => {
+            //Arrange
+            await page.goto(host);
+            await page.click("//a[text()='Login']");
+            await page.waitForSelector("form");
+
+            //Act
+            await page.fill("//input[@type='email']", user.email);
+            await page.fill("//input[@type='password']", user.password);
+            await page.fill("//input[@type='submit']");
+
+            //Assert
+            await expect(page.locator("//a[text()='All games']")).toBeVisible();
+            await expect(page.locator("//a[text()='Create Game']")).toBeVisible();
+            await expect(page.locator("//a[text()='Logout']")).toBeVisible();
+
+            await expect(page.locator("//a[text()='Login']")).toBeHidden();
+            await expect(page.locator("//a[text()='Register']")).toBeHidden();
+        })
+
+        test("Guest users should see the correct buttons", async() => {
+            //Act
+            await page.goto(host);
+
+            //Assert
+            await expect(page.locator("//a[text()='All games']")).toBeVisible();
+            await expect(page.locator("//a[text()='Login']")).toBeVisible();
+            await expect(page.locator("//a[text()='Register']")).toBeVisible();
+
+            await expect(page.locator("//a[text()='Create Game']")).toBeHidden();
+            await expect(page.locator("//a[text()='Logout']")).toBeHidden();
+        })
+    });
+
+    describe("CRUD tests", () => {
+        beforeEach(async() => {
+            await page.goto(host);
+
+            await page.click("//a[@href='/login']");
+            await page.waitForSelector("form");
+            await page.fill("//input[@name='email']", user.email);
+            await page.fill("//input[@name='email']", user.password);
+            await page.click("//input[@type='submit']");
+        });
+
+        test("Create does NOT work with empty fields", async() => {
+            //Arrange
+            await page.click("//a[@href='/create']");
+            await page.waitForSelector("form");
+
+            //Act
+            page.on("dialog", async dialog => {
+                expect(dialog.message()).toBe("All fields are required!");
+
+                await dialog.accept();
+            });
+
+            await page.click("//input[@type='submit']");
+
+            //Assert
+            expect(page.url()).toBe(host + "/create");
+        })
+
+        test("Game is created when fill with valid data", async() => {
+            //Arrange
+            let random = Math.floor(Math.random() * 1000);
+            game.title = `Game title${random}`;
+            game.category = `Game category ${random}`;
+
+            await page.click("//a[text()='Create Game']");
+            await page.waitForSelector("form");
+
+            //Act
+            await page.fill("//input[@name='title']", game.title);
+            await page.fill("//input[@name='category']", game.category);
+            await page.fill("//input[@id='maxLevel']", game.maxLevel);
+            await page.fill("//input[@id='imageUrl']", game.imageUrl);
+            await page.fill("//textarea[@id='summury']", game.summary);
+
+            await page.click("//input[@type='submit']");
+
+            //Assert
+            await expect(page.locator(`//div[@class='game']//h3[text()="${game.title}"]`)).toBeVisible();
+            expect(page.url()).toBe(host + "/");
+        })
+
+        test("Correct details when open game that is created by me", async() => {
+            //Arrange
+            await page.goto(host + "/catalog");
+
+            //Act
+            await page.click(`//div[@class='allGames']//h2[text()='${game.title}']//following-sibling::a`);
+            game.id=game.url().split("/").pop();
+
+            //Assert
+            await expect(page.locator("//a[text()='Edit']")).toBeVisible();
+            await expect(page.locator("//a[text()='Delete']")).toBeVisible();
+        })
+
+        test("Non owners cannot see edit and Delete buttons", async() => {
+            //Arrange
+            await page.goto(host + "/catalog");
+
+            //Act
+            await page.click("//div[@class='allGames']//h2[text()='MineCraft']/parent::div//a");
+
+            //Assert
+            await expect(page.locator("//a[text()='Edit']")).toBeHidden();
+            await expect(page.locator("//a[text()='Delete']")).toBeHidden();
+        })
+
+        test ("Successfully edit the game", async() => {
+            //Arrange
+            await goto(host + "/catalog");
+            await page.click(`//div[@class='allGames']//h2[text()='${game.title}']//following-sibling::a`);
+            await page.click("//a[text()='Edit']");
+
+            //Act
+            game.title = `${game.title}_edited`;
+            await page.fill("//input[@id='title']");
+            await page.click("//input[@type='submit']");
+
+            //Assert
+            await expect(page.locator( `//div[@class='game-header']//h1[text()="${game.title}"]`)).toBeVisible();
+            expect(page.url()).toBe(host + `/details/${game.id}`);
+        })
+
+        test("Successfully delete a game", async() => {
+            //Arrange
+            await goto(host + "/catalog");
+            await page.click(`//div[@class='allGames']//h2[text()='${game.title}']//following-sibling::a`);
+            
+            //Act
+            await page.click("//a[text()='Delete']");
+
+            //Assert
+            await expect(page.locator( `//div[@class='game']//h3[text()='${game.title}']`)).toBeHidden();
+            expect(page.url()).toBe(host + "/");
+        })
+    });
+
+    describe("Home Page tests", () => {
+        test("Correct data on home page", async() => {
+            //Act
+            await page.goto(host)
+
+            //Assert
+            await expect(page.locator("//div[@class='welcome-message']//h2")).toHaveText("All ne games are");
+            await expect(page.locator("//div[@class='welcome-message']//h3")).toHaveText("Only in GamePlay");
+
+            await expect(page.locator("//div[@id='home-page']//h1")).toHaveText("Latest Games");
+
+            const divGames = await page.locator("//div[@class='game']").all();
+
+            expect(divGames.length).toBeGreaterThan(3);
+        })
+    });
+})
